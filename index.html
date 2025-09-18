@@ -7,7 +7,8 @@
   <style>
     body {
       margin: 0;
-      background: #fff9c4; /* light yellow */
+      background: #0d1b2a; /* dark blue */
+      color: #e6eefc;
       font-family: sans-serif;
     }
     svg {
@@ -16,105 +17,331 @@
     }
     .line {
       fill: none;
-      stroke-width: 2px;
-      opacity: 0.8;
+      stroke-width: 2.5px;
+      opacity: 1;
       cursor: pointer;
     }
     .line:hover {
       stroke-width: 4px;
       opacity: 1;
     }
-    .axis path, .axis line {
-      stroke: #555;
-    }
+    .axis path, .axis line { stroke: #9fb3d8; }
+    .axis text { fill: #e6eefc; }
+    input::placeholder { color: #b8c7e6; }
     #tooltip {
       position: absolute;
-      font-size: 28px;
+      font-size: 16px;
       font-weight: bold;
-      color: #222;
-      text-shadow: 0 1px 1px #fff;
+      color: #e6eefc;
+      text-shadow: 0 1px 1px #000;
+      background: rgba(0,0,0,0.55);
+      padding: 4px 8px;
+      border-radius: 8px;
+      text-align: center;
       pointer-events: none;
       display: none;
     }
+    #tooltip .tt-name { font-size: 20px; font-weight: 800; }
+    #tooltip .tt-sub { font-size: 13px; font-weight: 600; opacity: 0.95; }
   </style>
 </head>
 <body>
+  <div style="padding: 16px 14px 4px 14px; text-align:center;">
+    <div style="font-size: 32px; font-weight: 800; color:#e6eefc;">Population Growth (annual %)</div>
+    <div style="font-size: 14px; color:#c6d6f2; margin-top:4px; max-width: 900px;">
+      Annual percentage growth of the total population by country. Use the controls to add countries and compare their time series.
+    </div>
+  </div>
+  <div style="padding: 10px 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;">
+    <input id="countryInput" type="text" placeholder="Type country name (e.g., Argentina)" style="font-size:16px; padding:8px 12px; width: 320px; border-radius: 10px; border: 1px solid #6b86a8; background:#15263e; color:#e6eefc; outline: none;" />
+    <button id="addBtn" style="font-size:16px; padding:8px 14px; cursor:pointer; border-radius: 10px; border:1px solid #9fb3d8; background:#1a2a45; color:#e6eefc;">Add country</button>
+    <button id="clearBtn" style="font-size:16px; padding:8px 14px; cursor:pointer; border-radius: 10px; border:1px solid #c19aa0; background:#3a1f27; color:#ffe9ee;">Clear</button>
+    <div id="selectedList" style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;"></div>
+  </div>
   <svg></svg>
+  <div style="padding: 6px 14px 12px 14px; font-size: 12px; color:#c6d6f2; max-width: 1000px; text-align:center; margin: 0 auto;">
+    Notes: Values represent the annual percentage growth of a country's resident population. Positive values indicate growth; negative values indicate decline. Source: World Bank indicator SP.POP.GROW. Years and coverage depend on data availability.
+  </div>
   <div id="tooltip"></div>
   <script>
-    // Embed the JSON data directly:
-    const raw = {
-      "records": [
-        {"geoUnit":"ARG","year":2015,"value":1.1},
-        {"geoUnit":"ARG","year":2016,"value":1.0},
-        {"geoUnit":"ARG","year":2017,"value":0.9},
-        {"geoUnit":"CHL","year":2015,"value":1.2},
-        {"geoUnit":"CHL","year":2016,"value":1.1},
-        {"geoUnit":"CHL","year":2017,"value":1.0},
-        {"geoUnit":"KOR","year":2015,"value":0.5},
-        {"geoUnit":"KOR","year":2016,"value":0.4},
-        {"geoUnit":"KOR","year":2017,"value":0.3}
-        // 👉 aquí sigue todo tu JSON (pega todos los registros)
-      ]
+    // Inline ISO3 → country name map (no external requests)
+    const iso3ToName = {
+      "ABW":"Aruba","AFG":"Afghanistan","AGO":"Angola","AIA":"Anguilla","ALA":"Åland Islands","ALB":"Albania","AND":"Andorra","ARE":"United Arab Emirates","ARG":"Argentina","ARM":"Armenia","ASM":"American Samoa","ATA":"Antarctica","ATF":"French Southern Territories","ATG":"Antigua and Barbuda","AUS":"Australia","AUT":"Austria","AZE":"Azerbaijan",
+      "BDI":"Burundi","BEL":"Belgium","BEN":"Benin","BES":"Bonaire, Sint Eustatius and Saba","BFA":"Burkina Faso","BGD":"Bangladesh","BGR":"Bulgaria","BHR":"Bahrain","BHS":"Bahamas","BIH":"Bosnia and Herzegovina","BLM":"Saint Barthélemy","BLR":"Belarus","BLZ":"Belize","BMU":"Bermuda","BOL":"Bolivia","BRA":"Brazil","BRB":"Barbados","BRN":"Brunei Darussalam","BTN":"Bhutan","BVT":"Bouvet Island","BWA":"Botswana",
+      "CAF":"Central African Republic","CAN":"Canada","CCK":"Cocos (Keeling) Islands","CHE":"Switzerland","CHL":"Chile","CHN":"China","CIV":"Côte d’Ivoire","CMR":"Cameroon","COD":"Congo, Democratic Republic of the","COG":"Congo","COK":"Cook Islands","COL":"Colombia","COM":"Comoros","CPV":"Cabo Verde","CRI":"Costa Rica","CUB":"Cuba","CUW":"Curaçao","CXR":"Christmas Island","CYM":"Cayman Islands","CYP":"Cyprus","CZE":"Czechia",
+      "DEU":"Germany","DJI":"Djibouti","DMA":"Dominica","DNK":"Denmark","DOM":"Dominican Republic",
+      "DZA":"Algeria",
+      "ECU":"Ecuador","EGY":"Egypt","ERI":"Eritrea","ESH":"Western Sahara","ESP":"Spain","EST":"Estonia","ETH":"Ethiopia",
+      "FIN":"Finland","FJI":"Fiji","FLK":"Falkland Islands (Malvinas)","FRA":"France","FRO":"Faroe Islands",
+      "FSM":"Micronesia (Federated States of)",
+      "GAB":"Gabon","GBR":"United Kingdom","GEO":"Georgia","GGY":"Guernsey","GHA":"Ghana","GIB":"Gibraltar","GIN":"Guinea","GLP":"Guadeloupe","GMB":"Gambia","GNB":"Guinea-Bissau","GNQ":"Equatorial Guinea","GRC":"Greece","GRD":"Grenada","GRL":"Greenland","GTM":"Guatemala","GUF":"French Guiana","GUM":"Guam","GUY":"Guyana",
+      "HKG":"Hong Kong","HMD":"Heard Island and McDonald Islands","HND":"Honduras","HRV":"Croatia","HTI":"Haiti","HUN":"Hungary",
+      "IDN":"Indonesia","IMN":"Isle of Man","IND":"India","IOT":"British Indian Ocean Territory","IRL":"Ireland","IRN":"Iran (Islamic Republic of)","IRQ":"Iraq","ISL":"Iceland","ISR":"Israel","ITA":"Italy",
+      "JAM":"Jamaica","JEY":"Jersey","JOR":"Jordan","JPN":"Japan",
+      "KAZ":"Kazakhstan","KEN":"Kenya","KGZ":"Kyrgyzstan","KHM":"Cambodia","KIR":"Kiribati","KNA":"Saint Kitts and Nevis","KOR":"Korea, Republic of","KWT":"Kuwait",
+      "LAO":"Lao People’s Democratic Republic","LBN":"Lebanon","LBR":"Liberia","LBY":"Libya","LCA":"Saint Lucia","LIE":"Liechtenstein","LKA":"Sri Lanka","LSO":"Lesotho","LTU":"Lithuania","LUX":"Luxembourg","LVA":"Latvia",
+      "MAC":"Macao","MAF":"Saint Martin (French part)","MAR":"Morocco","MCO":"Monaco","MDA":"Moldova, Republic of","MDG":"Madagascar","MDV":"Maldives","MEX":"Mexico","MHL":"Marshall Islands","MKD":"North Macedonia","MLI":"Mali","MLT":"Malta","MMR":"Myanmar","MNE":"Montenegro","MNG":"Mongolia","MNP":"Northern Mariana Islands","MOZ":"Mozambique","MRT":"Mauritania","MSR":"Montserrat","MTQ":"Martinique","MUS":"Mauritius","MWI":"Malawi","MYS":"Malaysia","MYT":"Mayotte",
+      "NAM":"Namibia","NCL":"New Caledonia","NER":"Niger","NFK":"Norfolk Island","NGA":"Nigeria","NIC":"Nicaragua","NIU":"Niue","NLD":"Netherlands","NOR":"Norway","NPL":"Nepal","NRU":"Nauru","NZL":"New Zealand",
+      "OMN":"Oman",
+      "PAK":"Pakistan","PAN":"Panama","PCN":"Pitcairn","PER":"Peru","PHL":"Philippines","PLW":"Palau","PNG":"Papua New Guinea","POL":"Poland","PRI":"Puerto Rico","PRK":"Korea, Democratic People’s Republic of","PRT":"Portugal","PRY":"Paraguay","PSE":"Palestine, State of","PYF":"French Polynesia",
+      "QAT":"Qatar",
+      "REU":"Réunion","ROU":"Romania","RUS":"Russian Federation","RWA":"Rwanda",
+      "SAU":"Saudi Arabia","SDN":"Sudan","SEN":"Senegal","SGP":"Singapore","SGS":"South Georgia and the South Sandwich Islands","SHN":"Saint Helena, Ascension and Tristan da Cunha","SJM":"Svalbard and Jan Mayen","SLB":"Solomon Islands","SLE":"Sierra Leone","SLV":"El Salvador","SMR":"San Marino","SOM":"Somalia","SPM":"Saint Pierre and Miquelon","SRB":"Serbia","SSD":"South Sudan","STP":"Sao Tome and Principe","SUR":"Suriname","SVK":"Slovakia","SVN":"Slovenia","SWE":"Sweden","SWZ":"Eswatini","SXM":"Sint Maarten (Dutch part)","SYC":"Seychelles","SYR":"Syrian Arab Republic",
+      "TCA":"Turks and Caicos Islands","TCD":"Chad","TGO":"Togo","THA":"Thailand","TJK":"Tajikistan","TKL":"Tokelau","TKM":"Turkmenistan","TLS":"Timor-Leste","TON":"Tonga","TTO":"Trinidad and Tobago","TUN":"Tunisia","TUR":"Türkiye","TUV":"Tuvalu","TWN":"Taiwan, Province of China","TZA":"Tanzania, United Republic of",
+      "UGA":"Uganda","UKR":"Ukraine","UMI":"United States Minor Outlying Islands","URY":"Uruguay","USA":"United States of America","UZB":"Uzbekistan",
+      "VAT":"Holy See","VCT":"Saint Vincent and the Grenadines","VEN":"Venezuela (Bolivarian Republic of)","VGB":"Virgin Islands (British)","VIR":"Virgin Islands (U.S.)","VNM":"Viet Nam","VUT":"Vanuatu",
+      "WLF":"Wallis and Futuna","WSM":"Samoa","WLD":"World",
+      "YEM":"Yemen",
+      "ZAF":"South Africa","ZMB":"Zambia","ZWE":"Zimbabwe",
+      "ARM":"Armenia","AZE":"Azerbaijan","UKM":"United Kingdom Minor Outlying Islands"
     };
 
-    const records = raw.records;
+    // Load the dataset and render with multi-country selection
+    d3.json("data.json").then(raw => {
+      const nameByIso3 = new Map(Object.entries(iso3ToName));
+      const nameToIso3 = new Map(Object.entries(iso3ToName).map(([iso, name]) => [name, iso]));
+      const allRecords = raw.records.filter(d => d.value != null);
+      const allIso3 = Array.from(new Set(allRecords.map(d => d.geoUnit)));
 
-    const svg = d3.select("svg");
-    const width = svg.node().clientWidth;
-    const height = svg.node().clientHeight;
-    const margin = {top: 40, right: 30, bottom: 40, left: 60};
-    const innerWidth = width - margin.left - margin.right;
-    const innerHeight = height - margin.top - margin.bottom;
+      const svg = d3.select("svg");
+      const margin = {top: 40, right: 30, bottom: 40, left: 60};
+      const palette = [
+        ...d3.schemeTableau10,
+        ...d3.schemeSet3,
+        ...d3.schemeSet2,
+        ...d3.schemeSet1
+      ];
 
-    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+      const selectedIso3 = new Set();
+      const selectedOrder = [];
 
-    const years = Array.from(new Set(records.map(d => d.year))).sort((a,b) => a-b);
+      function getColorScale() {
+        const domain = selectedIso3.size
+          ? selectedOrder.filter(id => selectedIso3.has(id))
+          : allIso3;
+        return d3.scaleOrdinal(palette).domain(domain);
+      }
 
-    const x = d3.scaleLinear()
-      .domain(d3.extent(years))
-      .range([0, innerWidth]);
+      function getColorForIso(iso) {
+        return getColorScale()(iso);
+      }
 
-    const y = d3.scaleLinear()
-      .domain([
-        d3.min(records, d => d.value) - 0.5,
-        d3.max(records, d => d.value) + 0.5
-      ])
-      .nice()
-      .range([innerHeight, 0]);
+      function normalize(s) {
+        return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      }
 
-    const xAxis = d3.axisBottom(x).ticks(years.length).tickFormat(d3.format("d"));
-    const yAxis = d3.axisLeft(y);
+      function render(records) {
+        svg.selectAll('*').remove();
 
-    g.append("g")
-      .attr("transform", `translate(0,${innerHeight})`)
-      .call(xAxis);
+        const width = svg.node().clientWidth;
+        const height = svg.node().clientHeight;
+        const innerWidth = width - margin.left - margin.right;
+        const innerHeight = height - margin.top - margin.bottom;
 
-    g.append("g").call(yAxis);
+        const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    const line = d3.line()
-      .x(d => x(d.year))
-      .y(d => y(d.value));
+        const years = Array.from(new Set(records.map(d => d.year))).sort((a,b) => a-b);
 
-    const dataByCountry = d3.group(records, d => d.geoUnit);
-    const color = d3.scaleOrdinal(d3.schemeCategory10).domain(Array.from(dataByCountry.keys()));
+        const x = d3.scaleLinear()
+          .domain(d3.extent(years))
+          .range([0, innerWidth]);
 
-    g.selectAll(".line")
-      .data(dataByCountry)
-      .join("path")
-      .attr("class", "line")
-      .attr("stroke", ([id]) => color(id))
-      .attr("d", ([id, values]) => line(values.sort((a,b) => a.year-b.year)))
-      .on("mousemove", (event, [id]) => {
-        const tooltip = document.getElementById("tooltip");
-        tooltip.style.display = "block";
-        tooltip.style.left = (event.pageX) + "px";
-        tooltip.style.top = (event.pageY - 40) + "px";
-        tooltip.textContent = id;
-      })
-      .on("mouseout", () => {
-        document.getElementById("tooltip").style.display = "none";
-      });
+        const y = d3.scaleLinear()
+          .domain([
+            d3.min(records, d => d.value) - 0.5,
+            d3.max(records, d => d.value) + 0.5
+          ])
+          .nice()
+          .range([innerHeight, 0]);
+
+        const xAxis = d3.axisBottom(x).ticks(years.length).tickFormat(d3.format("d"));
+        const yAxis = d3.axisLeft(y);
+
+        g.append("g")
+          .attr("transform", `translate(0,${innerHeight})`)
+          .attr("class", "axis")
+          .call(xAxis);
+
+        g.append("g")
+          .attr("class", "axis")
+          .call(yAxis);
+
+        // Axis labels
+        g.append("text")
+          .attr("x", innerWidth / 2)
+          .attr("y", innerHeight + 34)
+          .attr("text-anchor", "middle")
+          .attr("fill", "#e6eefc")
+          .style("font-size", "12px")
+          .text("Year");
+
+        g.append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("x", -innerHeight / 2)
+          .attr("y", -46)
+          .attr("text-anchor", "middle")
+          .attr("fill", "#e6eefc")
+          .style("font-size", "12px")
+          .text("Population growth (% per year)");
+
+        const line = d3.line()
+          .x(d => x(d.year))
+          .y(d => y(d.value));
+
+        // Precompute sorted series per country for accurate hover
+        const series = Array.from(
+          d3.group(records, d => d.geoUnit),
+          ([id, arr]) => [id, arr.sort((a,b) => a.year - b.year)]
+        );
+        const color = getColorScale();
+
+        const bisect = d3.bisector(d => d.year).left;
+        const formatValue = d3.format(".2f");
+
+        // Single hover dot reused for any series
+        const hoverDot = g.append("circle")
+          .attr("class", "hover-dot")
+          .attr("r", 5)
+          .attr("fill", "#e6eefc")
+          .attr("stroke", "#0d1b2a")
+          .attr("stroke-width", 2)
+          .style("pointer-events", "none")
+          .style("display", "none");
+
+        g.selectAll(".line")
+          .data(series)
+          .join("path")
+          .attr("class", "line")
+          .attr("stroke", ([id]) => color(id))
+          .attr("d", ([id, values]) => line(values))
+          .on("mousemove", (event, [id, values]) => {
+            const tooltip = document.getElementById("tooltip");
+            tooltip.style.display = "block";
+            tooltip.style.left = (event.pageX + 12) + "px";
+            tooltip.style.top = (event.pageY - 28) + "px";
+            const name = nameByIso3.get(id) || id;
+            const [mx] = d3.pointer(event, g.node());
+            const yearF = x.invert(mx);
+            let i = bisect(values, yearF);
+            if (i <= 0) i = 0;
+            if (i >= values.length) i = values.length - 1;
+            let closest = values[i];
+            if (i > 0) {
+              const prev = values[i - 1];
+              closest = (Math.abs(prev.year - yearF) <= Math.abs(closest.year - yearF)) ? prev : closest;
+            }
+            hoverDot
+              .attr("cx", x(closest.year))
+              .attr("cy", y(closest.value))
+              .attr("fill", color(id))
+              .style("display", "block");
+            tooltip.innerHTML = `<div class="tt-name">${name}</div><div class="tt-sub">${closest.year}</div><div class="tt-sub">${formatValue(closest.value)}%</div>`;
+          })
+          .on("mouseout", () => {
+            document.getElementById("tooltip").style.display = "none";
+            d3.select(".hover-dot").style("display", "none");
+          })
+          .on("click", (event, [id]) => {
+            selectedIso3.clear();
+            selectedOrder.length = 0;
+            selectedIso3.add(id);
+            selectedOrder.push(id);
+            const filtered = allRecords.filter(d => d.geoUnit === id);
+            render(filtered);
+            refreshSelectedChips();
+          });
+      }
+
+      // Manage selected chips UI
+      const selectedList = document.getElementById('selectedList');
+      function refreshSelectedChips() {
+        selectedList.innerHTML = '';
+        if (selectedIso3.size === 0) {
+          const hint = document.createElement('span');
+          hint.style.color = '#c6d6f2';
+          hint.style.fontSize = '14px';
+          hint.textContent = 'Showing all countries';
+          selectedList.appendChild(hint);
+          return;
+        }
+        for (const iso of selectedIso3) {
+          const chip = document.createElement('span');
+          chip.textContent = nameByIso3.get(iso) || iso;
+          chip.style.padding = '4px 8px';
+          chip.style.borderRadius = '999px';
+          chip.style.border = '1px solid #9fb3d8';
+          chip.style.background = '#14243a';
+          chip.style.color = '#e6eefc';
+          chip.style.display = 'inline-flex';
+          chip.style.alignItems = 'center';
+          chip.style.gap = '6px';
+          chip.style.userSelect = 'none';
+          const swatch = document.createElement('span');
+          swatch.style.width = '10px';
+          swatch.style.height = '10px';
+          swatch.style.borderRadius = '50%';
+          swatch.style.background = getColorForIso(iso);
+          chip.prepend(swatch);
+          const remove = document.createElement('button');
+          remove.textContent = '×';
+          remove.style.cursor = 'pointer';
+          remove.style.border = 'none';
+          remove.style.background = 'transparent';
+          remove.style.color = '#e6eefc';
+          remove.style.fontSize = '16px';
+          remove.addEventListener('click', () => {
+            selectedIso3.delete(iso);
+            const idx = selectedOrder.indexOf(iso);
+            if (idx !== -1) selectedOrder.splice(idx, 1);
+            const records = selectedIso3.size ? allRecords.filter(d => selectedIso3.has(d.geoUnit)) : allRecords;
+            render(records);
+            refreshSelectedChips();
+          });
+          chip.appendChild(remove);
+          selectedList.appendChild(chip);
+        }
+      }
+
+      // Initial render with all countries
+      render(allRecords);
+      refreshSelectedChips();
+
+      // Hook up add/clear and Enter key
+      const input = document.getElementById('countryInput');
+      const addBtn = document.getElementById('addBtn');
+      const clearBtn = document.getElementById('clearBtn');
+
+      function addCountry() {
+        const query = normalize(input.value.trim());
+        if (!query) return;
+        let matchIso = null;
+        for (const [name, iso] of nameToIso3) {
+          if (normalize(name).includes(query)) { matchIso = iso; break; }
+        }
+        if (!matchIso) return;
+        if (!selectedIso3.has(matchIso)) {
+          selectedIso3.add(matchIso);
+          selectedOrder.push(matchIso);
+        }
+        const records = selectedIso3.size ? allRecords.filter(d => selectedIso3.has(d.geoUnit)) : allRecords;
+        render(records);
+        refreshSelectedChips();
+        input.value = '';
+      }
+
+      function clearSelection() {
+        selectedIso3.clear();
+        selectedOrder.length = 0;
+        render(allRecords);
+        refreshSelectedChips();
+      }
+
+      addBtn.addEventListener('click', addCountry);
+      clearBtn.addEventListener('click', clearSelection);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCountry(); });
+    }).catch(err => {
+      console.error("Failed to load data.json", err);
+    });
   </script>
 </body>
 </html>
